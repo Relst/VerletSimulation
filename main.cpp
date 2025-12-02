@@ -1,18 +1,20 @@
-// main.cpp
-
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
+
+#include <glm/glm.hpp>
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/norm.hpp>
+#include <glm/gtx/vector_angle.hpp>
+
 #include <vector>
 #include <cmath>
 #include <iostream>
 #include <cstring>
-#include <glm/glm.hpp>
-#define GLM_ENABLE_EXPERIMENTAL
-#include "Line.h"
-#include <glm/gtx/norm.hpp>
-#include <glm/gtx/vector_angle.hpp>
 #include <limits>
 #include <string>
+
+
+#include "Line.h"
 
 #define WIDTH 800
 #define HEIGHT 600
@@ -23,8 +25,13 @@
 #define DAMPING 0.999f
 #define PICK_RADIUS 15.0f
 
-GLuint circleVBO, circleVAO;
+GLuint circleVBO = 0, circleVAO = 0;
 GLFWwindow* windowPtr = nullptr;
+
+int fbWidth = WIDTH;
+int fbHeight = HEIGHT;
+int winWidth = WIDTH;
+int winHeight = HEIGHT;
 
 std::vector<Line*> lines;
 bool paused = false;
@@ -37,10 +44,39 @@ Line* dragLine = nullptr;  // line on which drag started
 Node* dragNodeA = nullptr;
 Node* dragNodeB = nullptr;
 
-// --- Utility functions ---
 
-glm::vec2 screenToWorld(double xpos, double ypos) {
-    return glm::vec2((float)xpos, (float)(HEIGHT - ypos));
+void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
+    fbWidth = width;
+    fbHeight = height;
+
+    glViewport(0, 0, fbWidth, fbHeight);
+
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+
+    glOrtho(0, fbWidth, 0, fbHeight, -1, 1);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+}
+
+
+glm::vec2 screenToWorld(GLFWwindow* window, double xpos, double ypos) {
+
+    int wW, wH;
+    glfwGetWindowSize(window, &wW, &wH);
+    int fW, fH;
+    glfwGetFramebufferSize(window, &fW, &fH);
+
+
+    float scaleX = (wW > 0) ? (float)fW / (float)wW : 1.0f;
+    float scaleY = (wH > 0) ? (float)fH / (float)wH : 1.0f;
+
+
+    float fbX = (float)xpos * scaleX;
+    float fbY = (float)ypos * scaleY;
+
+
+    return glm::vec2(fbX, (float)(fH) - fbY);
 }
 
 float distSquared(const float* pos, const glm::vec2& point2D) {
@@ -75,7 +111,6 @@ float pointSegmentDistSq(const glm::vec2& p, const glm::vec2& v, const glm::vec2
     return glm::length2(p - projection);
 }
 
-// Find closest segment within maxDist across all lines
 struct LineSegmentHit {
     Line* line = nullptr;
     Node* nodeA = nullptr;
@@ -129,7 +164,7 @@ void insertNewLineBetweenPoints(const glm::vec2& start, const glm::vec2& end, in
     }
     newLine->end = prev;
 
-    // Approximate delta as uniform distance between first two points
+
     float delta = glm::distance(glm::vec2(newLine->root->position[0], newLine->root->position[1]),
                                 glm::vec2(newLine->root->getNext()->position[0], newLine->root->getNext()->position[1]));
     newLine->delta = delta;
@@ -138,7 +173,6 @@ void insertNewLineBetweenPoints(const glm::vec2& start, const glm::vec2& end, in
     std::cout << "Created new line with " << numPoints << " nodes.\n";
 }
 
-// Collision and physics helpers
 void enforceMaxDistance(Node* a, Node* b, float delta) {
     float dir[3];
     float distSq = 0.0f;
@@ -213,13 +247,13 @@ void enforceWallCollision(Node* node, float radius) {
 
     if (node->position[0] < radius)
         node->position[0] = radius;
-    else if (node->position[0] > WIDTH - radius)
-        node->position[0] = WIDTH - radius;
+    else if (node->position[0] > fbWidth - radius)
+        node->position[0] = fbWidth - radius;
 
     if (node->position[1] < radius)
         node->position[1] = radius;
-    else if (node->position[1] > HEIGHT - radius)
-        node->position[1] = HEIGHT - radius;
+    else if (node->position[1] > fbHeight - radius)
+        node->position[1] = fbHeight - radius;
 }
 
 void applyGravity(Line& line, float gravity = GRAVITY, float timeStep = DT) {
@@ -252,14 +286,18 @@ void applyGravity(Line& line, float gravity = GRAVITY, float timeStep = DT) {
     }
 }
 
-// --- OpenGL rendering setup and functions ---
+
 
 void createUnitCircle() {
-    std::vector<float> circleVertices = {0.0f, 0.0f};
+    std::vector<float> circleVertices;
+    circleVertices.reserve((BALL_QUALITY + 2) * 2);
+    circleVertices.push_back(0.0f);
+    circleVertices.push_back(0.0f);
+
     for (int i = 0; i <= BALL_QUALITY; ++i) {
-        float angle = 2.0f * M_PI * i / BALL_QUALITY;
-        circleVertices.push_back(cos(angle));
-        circleVertices.push_back(sin(angle));
+        float angle = 2.0f * (float)M_PI * i / BALL_QUALITY;
+        circleVertices.push_back(cosf(angle));
+        circleVertices.push_back(sinf(angle));
     }
 
     glGenVertexArrays(1, &circleVAO);
@@ -267,16 +305,19 @@ void createUnitCircle() {
     glBindVertexArray(circleVAO);
     glBindBuffer(GL_ARRAY_BUFFER, circleVBO);
     glBufferData(GL_ARRAY_BUFFER, circleVertices.size() * sizeof(float), circleVertices.data(), GL_STATIC_DRAW);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+
     glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+
     glBindVertexArray(0);
 }
 
-void drawBall(glm::vec2 pos) {
+void drawBall(const glm::vec2& pos) {
     glPushMatrix();
     glTranslatef(pos.x, pos.y, 0.0f);
     glScalef(BALL_RADIUS, BALL_RADIUS, 1.0f);
     glBindVertexArray(circleVAO);
+    // number of vertices = center + (BALL_QUALITY+1)
     glDrawArrays(GL_TRIANGLE_FAN, 0, BALL_QUALITY + 2);
     glBindVertexArray(0);
     glPopMatrix();
@@ -305,14 +346,14 @@ void renderLine(Line& line) {
     }
 }
 
-// --- Input callbacks ---
+
 
 void mouse_button_callback(GLFWwindow* window, int button, int action, int mods) {
     if (button != GLFW_MOUSE_BUTTON_LEFT) return;
 
     double xpos, ypos;
     glfwGetCursorPos(window, &xpos, &ypos);
-    glm::vec2 clickPos = screenToWorld(xpos, ypos);
+    glm::vec2 clickPos = screenToWorld(window, xpos, ypos);
 
     if (action == GLFW_PRESS) {
         // On press, check if clicked on a node to toggle fixed
@@ -362,7 +403,7 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
 
 void cursor_position_callback(GLFWwindow* window, double xpos, double ypos) {
     if (isDragging) {
-        dragEnd = screenToWorld(xpos, ypos);
+        dragEnd = screenToWorld(window, xpos, ypos);
     }
 }
 
@@ -374,30 +415,38 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
 }
 
 int main() {
-    if (!glfwInit()) {
-        std::cerr << "Failed to init GLFW\n";
-        return -1;
-    }
+    glfwInit();
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_ANY_PROFILE);
 
     windowPtr = glfwCreateWindow(WIDTH, HEIGHT, "Line Nodes Physics", nullptr, nullptr);
     if (!windowPtr) {
-        glfwTerminate();
         std::cerr << "Failed to create window\n";
+        glfwTerminate();
         return -1;
     }
 
     glfwMakeContextCurrent(windowPtr);
 
+
     glewExperimental = GL_TRUE;
-    if (glewInit() != GLEW_OK) {
-        std::cerr << "Failed to init GLEW\n";
+    GLenum glewStatus = glewInit();
+    if (glewStatus != GLEW_OK) {
+        std::cerr << "Failed to init GLEW: " << glewGetErrorString(glewStatus) << std::endl;
+        glfwTerminate();
         return -1;
     }
 
-    glViewport(0, 0, WIDTH, HEIGHT);
+
+    glfwGetWindowSize(windowPtr, &winWidth, &winHeight);
+    glfwGetFramebufferSize(windowPtr, &fbWidth, &fbHeight);
+
+
+    glViewport(0, 0, fbWidth, fbHeight);
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    glOrtho(0, WIDTH, 0, HEIGHT, -1, 1);
+    glOrtho(0, fbWidth, 0, fbHeight, -1, 1);
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
@@ -407,20 +456,29 @@ int main() {
 
     createUnitCircle();
 
+
+    glfwSetFramebufferSizeCallback(windowPtr, framebuffer_size_callback);
     glfwSetMouseButtonCallback(windowPtr, mouse_button_callback);
     glfwSetKeyCallback(windowPtr, key_callback);
     glfwSetCursorPosCallback(windowPtr, cursor_position_callback);
 
-    // Initial line setup
+
     float start[3] = {100.0f, 500.0f, 0.0f};
     Line* line1 = new Line(400, 14, start);
-    line1->root->getNext()->getNext()->getNext()->getNext()->setFixed(true);
+    if (line1->root && line1->root->getNext() && line1->root->getNext()->getNext() &&
+        line1->root->getNext()->getNext()->getNext() && line1->root->getNext()->getNext()->getNext()->getNext()) {
+        line1->root->getNext()->getNext()->getNext()->getNext()->setFixed(true);
+    }
     lines.push_back(line1);
 
+
     while (!glfwWindowShouldClose(windowPtr)) {
+        glfwGetWindowSize(windowPtr, &winWidth, &winHeight);
+        glfwGetFramebufferSize(windowPtr, &fbWidth, &fbHeight);
+
         glClear(GL_COLOR_BUFFER_BIT);
 
-        // Draw drag preview line if dragging
+
         if (isDragging) {
             glColor3f(1.0f, 1.0f, 0.0f);
             glBegin(GL_LINES);
@@ -434,7 +492,7 @@ int main() {
                 applyGravity(*line, GRAVITY, DT);
             }
 
-            // Collisions inside lines
+
             for (Line* line : lines) {
                 std::vector<Node*> nodes;
                 Node* curr = line->root;
@@ -449,7 +507,7 @@ int main() {
                 }
             }
 
-            // Collisions between lines
+
             for (size_t i = 0; i < lines.size(); ++i) {
                 std::vector<Node*> nodesA;
                 Node* currA = lines[i]->root;
@@ -474,7 +532,7 @@ int main() {
                 }
             }
 
-            // Wall collisions
+
             for (Line* line : lines) {
                 Node* curr = line->root;
                 while (curr) {
@@ -484,7 +542,7 @@ int main() {
             }
         }
 
-        // Draw all lines
+
         for (Line* line : lines) {
             renderLine(*line);
         }
@@ -493,12 +551,13 @@ int main() {
         glfwPollEvents();
     }
 
-    // Cleanup
+
     for (Line* line : lines)
         delete line;
 
-    glDeleteBuffers(1, &circleVBO);
-    glDeleteVertexArrays(1, &circleVAO);
+    if (circleVBO) glDeleteBuffers(1, &circleVBO);
+    if (circleVAO) glDeleteVertexArrays(1, &circleVAO);
+
     glfwDestroyWindow(windowPtr);
     glfwTerminate();
     return 0;
