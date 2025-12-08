@@ -5,9 +5,13 @@ A real-time physics simulation using Verlet integration, and OpenGL rendering to
 ---
 Actions:
 - SpaceBar: Pause/Resume Simulation
-- Click Ball Node: Toggle node position fixed status
-- Drag near a node to create new node, of custom length.
+- Toggle between Modes using:
+  - T : Toggle sticky node
+  - D : Drag node or entire line segment (from fixed node (blue))
+  - C : Delete Line
+  - U : Cut line from a segmet
+  - I : Insert a New Line into the simulation using ImGui interface for specification
 
 TODO:
-- Re-implement with Klein Enging
-- Create logic for different mode operations
+- Re-implement with Klein Engine
+- Fix node to node interaction.
