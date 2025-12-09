@@ -174,10 +174,17 @@ Node* findClosestNode(Line& line, const glm::vec2& clickPos, float maxDist) {
 }
 
 float pointSegmentDistSq(const glm::vec2& p, const glm::vec2& v, const glm::vec2& w) {
+    //vector from point v to w
     float l2 = glm::length2(w - v);
+    // if is 0 then return the distance from point v to p
     if (l2 == 0.0f) return glm::length2(p - v);
+    // t is the dot product of vector v to p  and v to w.
+    // when p is in perpendicular then this is 0, if p is behind v then negative
+    // if p is in-front of v then positive
+    // A clamped version of the projection formula of a vector a (p-v) onto vector b (w-v)
     float t = glm::dot(p - v, w - v) / l2;
     t = glm::clamp(t, 0.0f, 1.0f);
+    //projects the point from onto the vector from v to w
     glm::vec2 projection = v + t * (w - v);
     return glm::length2(p - projection);
 }
